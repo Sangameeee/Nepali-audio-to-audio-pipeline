@@ -1,0 +1,77 @@
+# ==============================================================================
+# Vani - Python Dependencies
+# File: backend/requirements.txt
+#
+# Install with: pip install -r requirements.txt
+#
+# Core dependencies are listed first, optional/heavy ML packages below.
+# Uncomment ML packages as needed when integrating real models.
+# ==============================================================================
+
+# ── Core Framework ───────────────────────────────────────────────────────
+deep-translator==1.11.4
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12        # For file uploads in FastAPI
+pydantic==2.9.2
+pydantic-settings==2.6.1        # For Settings with .env support
+
+# ── HTTP Client (for Weather API calls) ──────────────────────────────────
+httpx==0.27.2
+
+# ── Audio Processing ─────────────────────────────────────────────────────
+pydub==0.25.1                   # Audio format conversion (requires ffmpeg)
+# librosa==0.10.2               # Alternative audio processing (heavier)
+
+# ── Translation (Google Translate) ───────────────────────────────────────
+# NOTE: Keep googletrans disabled; it is incompatible with modern httpcore.
+# googletrans==4.0.0-rc.1
+
+# ── TTS (Google Text-to-Speech) ─────────────────────────────────────────
+gTTS==2.5.4                     # Lightweight TTS using Google Translate TTS
+
+# ── HTTP Client (for remote ASR/RAG API calls) ──────────────────────────
+requests==2.32.3                # Sync HTTP client for Colab ngrok APIs
+
+# ── Logging ──────────────────────────────────────────────────────────────
+# loguru==0.7.2                 # Optional: nicer logging
+
+# ══════════════════════════════════════════════════════════════════════════
+# OPTIONAL: ML / AI PACKAGES
+# Uncomment when you're ready to integrate real models.
+# These packages are large and may require GPU support.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── PyTorch (required for most ML models) ────────────────────────────────
+# torch==2.4.0                  # CPU: pip install torch
+# torchaudio==2.4.0             # Audio processing for PyTorch
+
+# ── ASR: NVIDIA NeMo (English) ──────────────────────────────────────────
+# nemo_toolkit[asr]==2.0.0      # Large package (~2GB)
+# Install separately: pip install nemo_toolkit[asr]
+
+# ── ASR: Indic-Conformer (Nepali) ───────────────────────────────────────
+# transformers==4.44.0          # HuggingFace Transformers
+# speechbrain==1.0.0            # Alternative ASR framework
+# sentencepiece==0.2.0          # Tokenizer for some models
+
+# ── Translation ──────────────────────────────────────────────────────────
+# transformers==4.44.0          # Already listed above
+# sentencepiece==0.2.0          # Already listed above
+
+# ── TTS: Coqui XTTS-v2 ──────────────────────────────────────────────────
+# TTS==0.22.0                   # Coqui TTS (~500MB)
+# Install separately: pip install TTS
+
+# ── Language Detection ───────────────────────────────────────────────────
+# transformers==4.44.0          # Already listed above
+
+# ── RAG: LangChain + FAISS ──────────────────────────────────────────────
+# langchain==0.3.1
+# langchain-community==0.3.1
+# faiss-cpu==1.8.0              # Vector store
+# sentence-transformers==3.1.0  # Embeddings
+
+# ── LLM APIs ────────────────────────────────────────────────────────────
+# groq==0.11.0                  # Groq API client
+# openai==1.46.0                # OpenAI API client

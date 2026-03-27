@@ -1,0 +1,5 @@
+run.txt
+venv/
+backend/app/config.py
+backend/app/__pycache__
+backend/app/routers/__pycache__

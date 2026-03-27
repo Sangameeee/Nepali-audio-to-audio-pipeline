@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<!--
+  ==============================================================================
+  Voice Assistant for Nepali + English
+  Classical White Theme
+  ==============================================================================
+-->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant</title>
+    <meta name="description"
+        content="Voice Assistant for Nepali and English with ASR, Translation, TTS, and Q&A capabilities.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Source+Sans+3:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         NAVBAR
+         ═══════════════════════════════════════════════════════════════════ -->
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <div class="logo-group">
+                <div class="logo-icon">
+                    <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <h1 class="logo-title"></h1>
+                    <span class="logo-subtitle"></span>
+                </div>
+            </div>
+            <div class="top-actions">
+                <button id="autoVoiceBtn" onclick="toggleAutoVoice()" class="btn btn-voice"
+                    title="Automatically play generated audio">
+                    Auto Voice OFF
+                </button>
+                <button id="onlineTtsBtn" onclick="toggleOnlineTts()" class="btn btn-voice"
+                    title="Use Online TTS (ElevenLabs API)">
+                    Online TTS OFF
+                </button>
+                <button id="devModeBtn" onclick="toggleDevMode()" class="btn btn-dev">
+                    &#9881; Dev Mode
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         MAIN CONTENT
+         ═══════════════════════════════════════════════════════════════════ -->
+    <main class="main-container">
+        <div class="grid-layout">
+
+            <!-- ── LEFT PANEL: Input Controls ──────────────────────────── -->
+            <div class="panel-left">
+
+                <!-- Language Selection -->
+                <div class="card">
+                    <label class="card-label">Language</label>
+                    <select id="langSelect" class="select-input">
+                        <option value="en">English</option>
+                        <option value="ne">नेपाली (Nepali)</option>
+                        <option value="auto">Automatic Detection</option>
+                    </select>
+                </div>
+
+                <!-- Audio Input Section -->
+                <div id="audioSection" class="card">
+                    <h3 class="card-label">Audio Input</h3>
+
+                    <button id="recordBtn" onclick="toggleRecording()" class="btn btn-record">
+                        <svg id="recordIcon" width="16" height="16" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="6" fill="currentColor" />
+                        </svg>
+                        <span id="recordText">Start Recording</span>
+                    </button>
+
+                    <div id="waveformContainer" class="waveform-container hidden">
+                        <canvas id="waveformCanvas" class="waveform-canvas"></canvas>
+                    </div>
+
+                    <div class="upload-wrapper">
+                        <input type="file" id="audioFileInput" accept=".wav,.mp3,.m4a,.ogg,.flac,.webm"
+                            onchange="handleFileUpload(event)" class="hidden">
+                        <button onclick="document.getElementById('audioFileInput').click()" class="btn btn-upload">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                            Upload Audio File
+                        </button>
+                    </div>
+
+                    <div id="fileInfo" class="file-info hidden">
+                        <span id="fileName"></span>
+                    </div>
+                </div>
+
+                <!-- Dev Mode Text Input -->
+                <div id="devSection" class="card hidden">
+                    <h3 class="card-label">Text Input &mdash; Dev Mode</h3>
+                    <textarea id="devTextInput" rows="5"
+                        placeholder="Type your query here...&#10;&#10;Examples:&#10;  • What's the weather in Kathmandu?&#10;  • काठमाडौंको मौसम कस्तो छ?"
+                        class="textarea-input"></textarea>
+                    <button id="devSubmitBtn" onclick="submitDevQuery()" class="btn btn-primary">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        Process Query
+                    </button>
+                </div>
+
+                <!-- Translation Section (Dev Mode) -->
+                <div id="translateSection" class="card hidden">
+                    <h3 class="card-label">Translation</h3>
+                    <div class="translate-lang-row">
+                        <select id="srcLangSelect" class="select-input select-half">
+                            <option value="en">English</option>
+                            <option value="ne">नेपाली</option>
+                        </select>
+                        <span class="translate-arrow">→</span>
+                        <select id="tgtLangSelect" class="select-input select-half">
+                            <option value="ne">नेपाली</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <textarea id="translateInput" rows="4" placeholder="Enter text to translate..."
+                        class="textarea-input"></textarea>
+                    <button id="translateBtn" onclick="submitTranslation()" class="btn btn-primary">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                        </svg>
+                        Translate
+                    </button>
+                    <div id="translateResult" class="translate-result hidden">
+                        <label class="card-label">Translation Result</label>
+                        <p id="translateResultText" class="result-text"></p>
+                    </div>
+                </div>
+
+                <!-- Submit Audio Button -->
+                <button id="submitAudioBtn" onclick="submitAudioQuery()" class="btn btn-send hidden">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                    Send Audio
+                </button>
+            </div>
+
+            <!-- ── CENTER PANEL: Status Log ────────────────────────────── -->
+            <div class="panel-center">
+                <div class="card card-full">
+                    <h3 class="card-label label-with-icon">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                        Processing Log
+                    </h3>
+                    <div id="statusLog" class="status-log">
+                        <div class="status-placeholder">Waiting for input&hellip;</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── RIGHT PANEL: Results ────────────────────────────────── -->
+            <div class="panel-right">
+
+                <!-- Input Audio Playback -->
+                <div id="inputAudioSection" class="card hidden">
+                    <h3 class="card-label">Input Audio</h3>
+                    <audio id="inputAudioPlayer" controls class="audio-native-player"></audio>
+                </div>
+
+                <!-- Transcription -->
+                <div class="card">
+                    <div class="card-header-row">
+                        <h3 class="card-label">Original Transcription</h3>
+                        <span id="detectedLangBadge" class="badge badge-blue hidden"></span>
+                    </div>
+                    <p id="transcriptText" class="result-text">
+                        <span class="placeholder-text">No transcription yet.</span>
+                    </p>
+                </div>
+
+                <!-- Response -->
+                <div class="card">
+                    <div class="card-header-row">
+                        <h3 class="card-label">Response</h3>
+                        <div class="header-actions">
+                            <span id="responseLangBadge" class="badge badge-green hidden"></span>
+                            <button onclick="copyResponse()" title="Copy response" class="btn-icon">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <p id="responseText" class="result-text">
+                        <span class="placeholder-text">No response yet.</span>
+                    </p>
+                </div>
+
+                <!-- English Answer -->
+                <div id="englishAnswerSection" class="card hidden">
+                    <h3 class="card-label">English Answer</h3>
+                    <p id="englishAnswerText" class="result-text"></p>
+                </div>
+
+                <!-- RAG Sources -->
+                <div id="ragSourcesSection" class="card hidden">
+                    <h3 class="card-label label-with-icon" onclick="toggleSources()" style="cursor:pointer;">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        Sources
+                        <span id="sourcesCount" class="badge badge-blue" style="margin-left:0.5rem;"></span>
+                    </h3>
+                    <div id="ragSourcesList" class="rag-sources-list"></div>
+                </div>
+
+                <!-- Audio Response Player -->
+                <div id="audioPlayerSection" class="card hidden">
+                    <h3 class="card-label">Audio Response</h3>
+                    <audio id="audioPlayer" controls class="audio-native-player"></audio>
+                </div>
+
+                <!-- Error Display -->
+                <div id="errorSection" class="card card-error hidden">
+                    <h3 class="card-label label-error">Error</h3>
+                    <p id="errorText" class="error-text"></p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         FOOTER
+         ═══════════════════════════════════════════════════════════════════ -->
+    <footer class="footer">
+        <div class="footer-ornament">&mdash; &#10047; &mdash;</div>
+        <span>Voice Assistant v0.1.0 &mdash; Voice Assistant for Nepali + English</span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
