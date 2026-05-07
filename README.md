@@ -17,6 +17,8 @@ If you don’t have GPU or models downloaded, you can still test everything in *
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [Demo](#demo)
+- [Models & Datasets](#models--datasets)
 - [Key Features](#key-features)
 - [Architecture](#architecture)
 - [Repository Layout](#repository-layout)
@@ -25,7 +27,6 @@ If you don’t have GPU or models downloaded, you can still test everything in *
 - [Remote Models via Colab/Kaggle + ngrok](#remote-models-via-colabkaggle--ngrok)
 - [Configuration (.env)](#configuration-env)
 - [API Reference (Backend)](#api-reference-backend)
-- [Models & Datasets](#models--datasets)
 - [Notebooks](#notebooks)
 - [Troubleshooting](#troubleshooting)
 
@@ -40,6 +41,45 @@ This repository contains a runnable “full app” experience:
 - **Remote notebooks:** Jupyter notebooks to run GPU-heavy ASR and RAG/SLM pipelines in Colab/Kaggle and expose them publicly using ngrok.
 
 The design goal is pragmatic: keep local setup light while still enabling strong model quality by offloading expensive inference to GPU runtimes.
+
+---
+
+## Demo
+
+> Replace the image URLs below with your own GitHub image links if you want.
+> These two images currently point to the local `images/` folder.
+
+![Demo screenshot 1](images/audio_1.png)
+![Demo screenshot 2](images/audio_2.png)
+
+<!-- Optional: replace with full GitHub URLs
+![Demo screenshot 1](https://github.com/<user>/<repo>/raw/main/images/demo_1.png)
+![Demo screenshot 2](https://github.com/<user>/<repo>/raw/main/images/demo_2.png)
+-->
+
+---
+
+## Models & Datasets
+
+### Try the Nepali ASR model (online demo)
+
+- Hugging Face Space: https://huggingface.co/spaces/gam30/nepali-asr-indicconformer
+
+### Download Nepali ASR model
+
+- Model: https://huggingface.co/gam30/nepali-automatic-speech-recognition
+
+### Datasets
+
+- Test set (noisy): https://huggingface.co/datasets/gam30/nepali-asr-test-set-all-noisy
+- Train/validation: https://huggingface.co/datasets/gam30/Nepali-asr-train-val
+
+### Pipeline model links (Drive)
+
+The pipeline folder also includes Drive links referenced by notebooks:
+
+- LLM model: https://drive.google.com/file/d/1pJ947KCOmeM-zjFG5jTKUPan0QaNXz0R/view?usp=sharing
+- ASR model: https://drive.google.com/file/d/10tIs7Xnq2QdGFQ82ZjXryFw8ttR3p6b9/view?usp=sharing
 
 ---
 
@@ -281,30 +321,6 @@ Colab-compatible helper endpoints:
 ### Streaming format
 
 `/api/query` and `/api/dev_process` stream **NDJSON** (`application/x-ndjson`) so the UI can show incremental status updates.
-
----
-
-## Models & Datasets
-
-### Try the Nepali ASR model (online demo)
-
-- Hugging Face Space: https://huggingface.co/spaces/gam30/nepali-asr-indicconformer
-
-### Download Nepali ASR model
-
-- Model: https://huggingface.co/gam30/nepali-automatic-speech-recognition
-
-### Datasets
-
-- Test set (noisy): https://huggingface.co/datasets/gam30/nepali-asr-test-set-all-noisy
-- Train/validation: https://huggingface.co/datasets/gam30/Nepali-asr-train-val
-
-### Pipeline model links (Drive)
-
-The pipeline folder also includes Drive links referenced by notebooks:
-
-- LLM model: https://drive.google.com/file/d/1pJ947KCOmeM-zjFG5jTKUPan0QaNXz0R/view?usp=sharing
-- ASR model: https://drive.google.com/file/d/10tIs7Xnq2QdGFQ82ZjXryFw8ttR3p6b9/view?usp=sharing
 
 ---
 
