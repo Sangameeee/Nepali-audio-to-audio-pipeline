@@ -49,13 +49,9 @@ The design goal is pragmatic: keep local setup light while still enabling strong
 > Replace the image URLs below with your own GitHub image links if you want.
 > These two images currently point to the local `images/` folder.
 
-![Demo screenshot 1](images/audio_1.png)
-![Demo screenshot 2](images/audio_2.png)
+![Demo screenshot 1](https://github.com/Sangameeee/Nepali-audio-to-audio-pipeline/blob/main/images/audio_1.png)
+![Demo screenshot 2](https://github.com/Sangameeee/Nepali-audio-to-audio-pipeline/blob/main/images/audio_2.png)
 
-<!-- Optional: replace with full GitHub URLs
-![Demo screenshot 1](https://github.com/<user>/<repo>/raw/main/images/demo_1.png)
-![Demo screenshot 2](https://github.com/<user>/<repo>/raw/main/images/demo_2.png)
--->
 
 ---
 
