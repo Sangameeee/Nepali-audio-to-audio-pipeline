@@ -42,6 +42,7 @@ class ASRService:
         self.settings = settings
         self.device = settings.DEVICE
         self._colab_api_url = settings.ASR_COLAB_API_URL
+        self._rag_colab_api_url = settings.RAG_COLAB_API_URL
         self._decoder = settings.ASR_DECODER
 
         logger.info(
@@ -119,18 +120,109 @@ class ASRService:
     # Private Methods
     # ──────────────────────────────────────────────────────────────────────
 
+    def _clean_transcript(self, transcript) -> str:
+        """Clean transcript if it is returned as a list or stringified list."""
+        if isinstance(transcript, list):
+            transcript = " ".join(str(item) for item in transcript)
+        if isinstance(transcript, str):
+            transcript = transcript.strip()
+            if transcript.startswith("['") and transcript.endswith("']"):
+                transcript = transcript[2:-2]
+            elif transcript.startswith('["') and transcript.endswith('"]'):
+                transcript = transcript[2:-2]
+            return transcript.strip()
+        return str(transcript)
+
     async def _transcribe_english(self, audio_path: str) -> str:
         """
-        Transcribe audio using English ASR.
-        Currently a placeholder — to be integrated later.
+        Transcribe audio using English ASR on remote Colab.
+
+        Preferred endpoint: {ASR_COLAB_API_URL}/transcribe
+        Fallback endpoint:  {RAG_COLAB_API_URL}/ask_audio (extract transcription)
 
         Args:
             audio_path: Path to 16kHz mono WAV file.
         Returns:
             Transcribed English text.
         """
-        logger.info(f"[MOCK] Transcribing English audio: {audio_path}")
-        return "English ASR is not yet integrated. Please select Nepali or Auto for ASR."
+        if not os.path.isfile(audio_path):
+            logger.error(f"Audio file not found: {audio_path}")
+            return "Error: Audio file not found."
+
+        # 1) Try direct transcription endpoint.
+        transcribe_url = (
+            f"{self._colab_api_url.rstrip('/')}/transcribe"
+            f"?decoder={self._decoder}"
+        )
+        try:
+            with open(audio_path, "rb") as f:
+                files = {
+                    "audio": (os.path.basename(audio_path), f, "audio/wav"),
+                }
+                response = requests.post(transcribe_url, files=files, timeout=120)
+
+            if response.status_code == 200:
+                data = response.json()
+                transcript = (
+                    data.get("transcription")
+                    or data.get("transcript")
+                    or data.get("text")
+                    or ""
+                )
+                transcript = self._clean_transcript(transcript)
+                if transcript:
+                    logger.info(f"English ASR transcription: '{transcript[:80]}...'")
+                    return transcript
+            else:
+                logger.warning(
+                    f"English /transcribe failed ({response.status_code}); will try /ask_audio fallback."
+                )
+        except Exception as e:
+            logger.warning(f"English /transcribe request failed: {e}")
+
+        # 2) Fallback: use unified /ask_audio and read only transcription.
+        try:
+            fallback_url = f"{self._rag_colab_api_url.rstrip('/')}/ask_audio"
+            with open(audio_path, "rb") as f:
+                files = {
+                    "audio": (os.path.basename(audio_path), f, "audio/wav"),
+                }
+                response = requests.post(fallback_url, files=files, timeout=180)
+
+            if response.status_code == 200:
+                data = response.json()
+                transcript = data.get("transcription", "")
+                transcript = self._clean_transcript(transcript)
+                if transcript:
+                    logger.info(
+                        "English ASR transcription extracted from Colab /ask_audio response."
+                    )
+                    return transcript
+
+                logger.error("/ask_audio succeeded but transcription was empty.")
+                return "ASR Error: Empty transcription returned by Colab server."
+
+            try:
+                detail = response.json().get("detail", response.text)
+            except Exception:
+                detail = response.text
+            logger.error(f"/ask_audio fallback failed ({response.status_code}): {detail}")
+            return f"ASR Error: {detail}"
+
+        except requests.exceptions.Timeout:
+            logger.error("English ASR fallback request timed out.")
+            return "ASR Error: Request timed out. Try a shorter audio file."
+        except requests.exceptions.ConnectionError:
+            logger.error(
+                f"Cannot reach English ASR/RAG server at {self._rag_colab_api_url}"
+            )
+            return (
+                "ASR Error: Cannot reach Colab server. "
+                "Make sure the notebook is running and ngrok URL is updated."
+            )
+        except Exception as e:
+            logger.error(f"Unexpected English ASR error: {e}")
+            return f"ASR Error: {str(e)}"
 
     async def _transcribe_nepali(self, audio_path: str) -> str:
         """
@@ -164,6 +256,7 @@ class ASRService:
             if response.status_code == 200:
                 data = response.json()
                 transcript = data.get("transcription", "")
+                transcript = self._clean_transcript(transcript)
                 logger.info(
                     f"Nepali ASR transcription: '{transcript[:80]}...'"
                 )

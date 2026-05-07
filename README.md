@@ -1,316 +1,356 @@
-# Voice Assistant for Nepali + English
 
-Welcome to **Voice Assistant**, a full-stack web application that accepts audio or text input, processes it through a pipeline of **language detection → ASR → intent detection → response generation → translation → TTS**, and returns an audio response in the appropriate language.
+# Nepali + English Voice Assistant (ASR • RAG • Translation • TTS)
+
+This is a full-stack voice assistant that supports **Nepali** and **English**. It runs a lightweight local web app (FastAPI + a static frontend) and can optionally call **heavy ML models hosted remotely** on **Google Colab** or **Kaggle** via **ngrok**.
+
+At a high level, Vani handles:
+
+- **Audio → text** (ASR)
+- **Intent & response generation** (weather/time + RAG Q&A)
+- **English ⇄ Nepali translation**
+- **Text → audio** (TTS)
+
+If you don’t have GPU or models downloaded, you can still test everything in **Dev Mode (text-only)**.
+
+---
+
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Repository Layout](#repository-layout)
+- [Quickstart (Local)](#quickstart-local)
+- [Dev Mode (Text Only)](#dev-mode-text-only)
+- [Remote Models via Colab/Kaggle + ngrok](#remote-models-via-colabkaggle--ngrok)
+- [Configuration (.env)](#configuration-env)
+- [API Reference (Backend)](#api-reference-backend)
+- [Models & Datasets](#models--datasets)
+- [Notebooks](#notebooks)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Introduction
+
+This repository contains a runnable “full app” experience:
+
+- **Backend:** FastAPI service that orchestrates the ASR → processing → translation → TTS pipeline.
+- **Frontend:** Single-page UI served by FastAPI (record audio, upload audio, dev-mode text input, and a streaming processing log).
+- **Remote notebooks:** Jupyter notebooks to run GPU-heavy ASR and RAG/SLM pipelines in Colab/Kaggle and expose them publicly using ngrok.
+
+The design goal is pragmatic: keep local setup light while still enabling strong model quality by offloading expensive inference to GPU runtimes.
+
+---
+
+## Key Features
+
+- **Nepali + English** interaction
+- **Audio recording** in the browser + audio file upload
+- **Streaming progress UI** (backend streams NDJSON steps)
+- **Dev Mode (text-only)**: bypass ASR/TTS for faster iteration
+- **Weather queries** (Open-Meteo; no API key required)
+- **Time queries**
+- **RAG Q&A** via remote Colab/Kaggle server (returns answer + sources)
+- **Translation** EN↔NE via `deep-translator` (Google Translate wrapper)
+- **TTS** using `gTTS` + `pydub` (optional online-TTS toggle in UI is currently a placeholder)
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Frontend (Browser)                       │
-│  ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌──────────────┐ │
-│  │ Record   │  │ Upload   │  │  Dev    │  │  Response    │ │
-│  │ Audio    │  │ Audio    │  │  Input  │  │  Display     │ │
-│  └────┬─────┘  └────┬─────┘  └────┬────┘  └──────────────┘ │
-│       │              │             │                         │
-└───────┼──────────────┼─────────────┼─────────────────────────┘
-        │              │             │
-        ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  FastAPI Backend (:8000)                      │
-│                                                              │
-│  /api/query ─────────────────────────────────────────────►  │
-│       │                                                      │
-│       ├─► ASR Service ──────► Transcript                     │
-│       │   ├── English (NeMo Conformer)                       │
-│       │   ├── Nepali (Indic-Conformer 600M)                  │
-│       │   └── Auto (Language Detection)                      │
-│       │                                                      │
-│       ├─► Translator Service ──► EN↔NE Translation           │
-│       │   ├── Helsinki-NLP/opus-mt-en-ne                     │
-│       │   └── Helsinki-NLP/opus-mt-ne-en                     │
-│       │                                                      │
-│       ├─► Processor Service ──► Intent + Response            │
-│       │   ├── Weather (OpenWeatherMap API)                   │
-│       │   ├── Time (Python datetime)                         │
-│       │   ├── News (RAG + LLM placeholder)                   │
-│       │   └── General (LLM fallback placeholder)             │
-│       │                                                      │
-│       └─► TTS Service ──────► Audio Response                 │
-│           └── Coqui XTTS-v2                                  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
+### Request flows
 
-## Features
+**Audio mode (UI default)**
 
-- **Dual Language Support**: English and Nepali (with automatic detection)
-- **Audio Input**: Live recording via browser microphone or file upload
-- **Dev Mode**: Text-only mode for testing without ASR/TTS models
-- **Intent Detection**: Weather queries, time, news, general knowledge
-- **Translation Pipeline**: Automatic EN↔NE translation via Helsinki-NLP
-- **Text-to-Speech**: Coqui XTTS-v2 for multilingual speech synthesis
-- **Mock Mode**: Fully functional with mock responses when models aren't loaded
-- **Clean UI**: Dark theme with Tailwind CSS, responsive design, waveform visualization
+1. Browser records/uploads audio
+2. Backend converts to 16kHz mono WAV when possible
+3. ASR runs:
+	 - English audio: remote unified `/ask_audio` pipeline (ASR + RAG in one call)
+	 - Nepali audio: remote `/transcribe` (Nepali ASR)
+4. Query processor:
+	 - Weather/time handled locally
+	 - Q&A handled by remote RAG `/ask`
+5. Translation (if needed)
+6. TTS (gTTS)
+
+**Dev Mode (text-only)**
+
+1. Text is sent to the backend with `is_dev=true`
+2. ASR and TTS are skipped
+3. Processing, translation, and RAG behave the same
+
+### Components
+
+- Backend entry point: `backend/app/main.py`
+- API router: `backend/app/routers/query.py`
+- Services:
+	- ASR: `backend/app/services/asr_service.py`
+	- Processor (intent + RAG calls): `backend/app/services/processor.py`
+	- Translator: `backend/app/services/translator.py`
+	- TTS: `backend/app/services/tts_service.py`
+	- Weather: `backend/app/services/weather_service.py`
 
 ---
 
-## Prerequisites
+## Repository Layout
 
-- **Python 3.9+** (3.11 recommended)
-- **FFmpeg** (for audio format conversion)
-  ```bash
-  # Ubuntu/Debian
-  sudo apt install ffmpeg
-
-  # macOS
-  brew install ffmpeg
-  ```
-- **Node.js** (not required — frontend is vanilla JS with Tailwind CDN)
+```
+.
+├─ backend/                 # FastAPI backend
+├─ frontend/                # Static UI (served by backend)
+├─ notebook_files/          # Colab/Kaggle notebooks (ngrok endpoints)
+├─ ASR-LLM-Pipeline/        # RAG + small language model (SLM) code
+├─ run.sh                   # Convenience runner (uvicorn)
+├─ run.txt                  # Local run instructions
+└─ DEV_MODE_GUIDE.md        # Dev mode details
+```
 
 ---
 
-## Setup & Installation
+## Quickstart (Local)
 
-### 1. Clone and Navigate
+### Prerequisites
+
+- Python 3.10+
+- `ffmpeg` (required by `pydub` for audio conversion)
+
+On Ubuntu/Debian:
 
 ```bash
-cd vani
+sudo apt update
+sudo apt install -y ffmpeg
 ```
 
-### 2. Create Virtual Environment
+### 1) Create & activate a virtualenv
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# venv\Scripts\activate   # Windows
+python3 -m venv venv
+source venv/bin/activate
 ```
 
-### 3. Install Dependencies
+### 2) Install backend dependencies
 
 ```bash
-cd backend
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
-### 4. Configure Environment
+### 3) Configure environment variables
+
+The backend reads `backend/.env` automatically.
 
 ```bash
-cp .env.example .env
-# Edit .env with your API keys and model paths
+cp backend/.env.example backend/.env
 ```
 
-### 5. Run the Server
+Then edit `backend/.env` to set your ngrok URLs (see [Configuration (.env)](#configuration-env)).
+
+### 4) Run the app
+
+Option A — convenience script:
 
 ```bash
-cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+chmod +x run.sh
+./run.sh
 ```
 
-### 6. Open in Browser
+If you prefer a single checklist, see `run.txt`.
 
-Visit: **http://localhost:8000**
+Option B — run uvicorn directly:
 
----
-
-## Project Structure
-
-```
-vani/
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py              # Package init
-│   │   ├── main.py                  # FastAPI app, CORS, static files, lifespan
-│   │   ├── config.py                # Pydantic Settings (paths, API keys, device)
-│   │   ├── schemas.py               # Pydantic request/response models
-│   │   ├── routers/
-│   │   │   ├── __init__.py
-│   │   │   └── query.py             # All /api endpoints
-│   │   ├── services/
-│   │   │   ├── __init__.py
-│   │   │   ├── asr_service.py       # English NeMo + Nepali Indic-Conformer
-│   │   │   ├── processor.py         # Weather, news, RAG/LLM fallback
-│   │   │   ├── translator.py        # EN↔NE translation
-│   │   │   ├── tts_service.py       # XTTS-v2 TTS
-│   │   │   └── utils.py             # Audio handling, temp files, base64
-│   │   └── models/                  # Empty – for model integration docs
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/
-│   ├── index.html                   # Single-page app UI
-│   ├── style.css                    # Custom styles
-│   └── app.js                       # Frontend logic
-├── models/                          # Model checkpoints (gitignored)
-│   ├── asr/
-│   │   ├── english/                 # NeMo checkpoints go here
-│   │   └── nepali/                  # Indic-Conformer files go here
-│   ├── tts/                         # XTTS-v2 files
-│   └── rag/                         # RAG embeddings
-├── data/
-│   └── news/                        # News documents for RAG
-├── README.md
-├── DEV_MODE_GUIDE.md
-└── run.sh                           # Convenience script
+```bash
+uvicorn app.main:app --app-dir backend --reload --host 0.0.0.0 --port 8000
 ```
 
+### 5) Open in the browser
+
+- App UI: http://localhost:8000
+- API docs (Swagger): http://localhost:8000/docs
+
 ---
 
-## API Endpoints
+## Dev Mode (Text Only)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check, model status |
-| POST | `/api/query` | Main pipeline (audio/text → response) |
-| POST | `/api/transcribe` | Audio → text only |
-| POST | `/api/synthesize` | Text → audio only |
-| POST | `/api/dev_process` | Dev mode (text → text) |
+Dev Mode is designed for fast iteration without ASR/TTS.
 
-### `/api/query` Parameters
+- UI guide: [DEV_MODE_GUIDE.md](DEV_MODE_GUIDE.md)
+- Under the hood it calls `/api/query` with `is_dev=true` (or `/api/dev_process`).
 
-**Audio Mode** (multipart form data):
-- `audio`: Audio file (WAV, MP3, M4A, OGG, FLAC, WEBM)
-- `lang`: `"en"`, `"ne"`, or `"auto"`
-- `is_dev`: `"false"`
+---
 
-**Dev Mode** (multipart form data):
-- `text`: Query text string
-- `lang`: `"en"`, `"ne"`, or `"auto"`
-- `is_dev`: `"true"`
+## Remote Models via Colab/Kaggle + ngrok
 
-### Response Format
+Vani supports running heavy inference remotely and calling it from your local machine.
 
-```json
-{
-  "transcript": "What is the weather in Kathmandu?",
-  "detected_lang": "en",
-  "answer_english": "Weather in Kathmandu: 22°C, partly cloudy...",
-  "final_text": "Weather in Kathmandu: 22°C, partly cloudy...",
-  "final_lang": "en",
-  "audio_base64": "data:audio/wav;base64,...",
-  "processing_steps": [
-    "Dev mode: Using text input (lang=en)",
-    "Detected intent: weather",
-    "Fetched weather data from OpenWeatherMap API.",
-    "✓ Pipeline complete."
-  ],
-  "error": null
-}
+### What you need to run remotely
+
+Vani expects two remote servers:
+
+1. **Nepali ASR server** (FastAPI + ngrok)
+	 - Must provide: `GET /health`, `POST /transcribe` (supports `?decoder=ctc|rnnt`)
+2. **Unified RAG/SLM (+ optional English ASR) server** (FastAPI + ngrok)
+	 - Must provide: `GET /health`, `POST /ask` (text Q&A), `POST /ask_audio` (English audio → transcription + answer)
+
+### Start the remote servers (notebooks)
+
+- Nepali ASR on Kaggle: [notebook_files/nepali-asr-api-server-kaggle.ipynb](notebook_files/nepali-asr-api-server-kaggle.ipynb)
+- Unified English ASR + RAG + SLM on Colab: [notebook_files/RAG_SLM_ASR_API_Server_v1.ipynb](notebook_files/RAG_SLM_ASR_API_Server_v1.ipynb)
+
+Both notebooks:
+
+- configure **ngrok auth token** (typically stored as a Secret called `ngrok_auth`)
+- start uvicorn
+- print a **public URL** like `https://xxxx.ngrok-free.app` (or `https://xxxx.ngrok-free.dev`)
+
+### Point your local app at the new ngrok URLs
+
+Update these fields in `backend/.env`:
+
+- `ASR_COLAB_API_URL=<public_url_for_nepali_asr_server>`
+- `RAG_COLAB_API_URL=<public_url_for_unified_rag_slm_server>`
+
+Then restart your local backend.
+
+---
+
+## Configuration (.env)
+
+Environment variables live in `backend/.env` (see `backend/.env.example`).
+
+Most important variables for the “local app + remote models” workflow:
+
+- `ASR_COLAB_API_URL`: Nepali ASR server base URL (ngrok)
+- `ASR_DECODER`: `ctc` (fast) or `rnnt` (more accurate, slower)
+- `RAG_COLAB_API_URL`: Unified RAG/SLM server base URL (ngrok)
+- `RAG_MIN_COSINE`, `RAG_DAYS_FILTER`, `RAG_TOP_K`: retrieval thresholds forwarded to the remote RAG server
+
+Other notable settings:
+
+- `DEVICE`: `cpu` or `cuda` (used for local model integration if you enable it later)
+- `WEATHER_PREFER_COUNTRY`: geocoding preference (default: Nepal)
+- `MAX_UPLOAD_SIZE`: max audio upload size (bytes)
+
+Full list (and defaults) is defined in `backend/app/config.py`.
+
+---
+
+## API Reference (Backend)
+
+Base URL (local): `http://localhost:8000`
+
+### Quick curl checks
+
+Health:
+
+```bash
+curl -s http://localhost:8000/api/health | python3 -m json.tool
 ```
 
----
+Dev Mode (text-only) — streams NDJSON (use `-N`):
 
-## Model Integration
+```bash
+curl -N -X POST http://localhost:8000/api/query \
+	-F "text=What is the weather in Kathmandu?" \
+	-F "lang=en" \
+	-F "is_dev=true"
+```
 
-The app runs in **mock mode** by default (no ML models needed). To integrate real models:
+Audio mode — streams NDJSON:
 
-### English ASR (NVIDIA NeMo)
+```bash
+curl -N -X POST http://localhost:8000/api/query \
+	-F "audio=@/path/to/audio.wav" \
+	-F "lang=ne" \
+	-F "is_dev=false"
+```
 
-1. Install: `pip install nemo_toolkit[asr]`
-2. Download: `stt_en_conformer_transducer_large` from NVIDIA NGC
-3. Place at: `models/asr/english/nemo_conformer.nemo`
-4. Uncomment code in `backend/app/services/asr_service.py` → `_load_english_model()`
+Core endpoints:
 
-### Nepali ASR (Indic-Conformer 600M)
+- `GET /api/health` — status + configured remote URLs
+- `POST /api/query` — main streaming endpoint (audio or dev-mode text)
+- `POST /api/dev_process` — streaming dev-mode endpoint (text-only)
+- `POST /api/transcribe` — audio → transcript
+- `POST /api/translate` — text translation
+- `POST /api/synthesize` — text → audio
 
-1. Install: `pip install transformers speechbrain`
-2. Download:
-   ```bash
-   git lfs install
-   git clone https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual models/asr/nepali
-   ```
-3. Uncomment code in `asr_service.py` → `_load_nepali_model()`
+Colab-compatible helper endpoints:
 
-### Translation (Helsinki-NLP)
+- `POST /api/ask` — forwards text to the remote RAG `/ask`
+- `POST /api/ask_audio` — accepts audio and forwards to remote `/ask_audio` (English audio path)
 
-1. Install: `pip install transformers sentencepiece`
-2. Models auto-download from HuggingFace on first use
-3. Uncomment code in `translator.py` → `_load_en_to_ne()` / `_load_ne_to_en()`
+### Streaming format
 
-### TTS (Coqui XTTS-v2)
-
-1. Install: `pip install TTS`
-2. Model auto-downloads on first use (~1.8GB)
-3. Prepare a reference WAV file for voice cloning
-4. Uncomment code in `tts_service.py` → `_load_model()`
-
-### RAG + LLM (for News)
-
-1. Install: `pip install langchain faiss-cpu sentence-transformers`
-2. Place news documents in `data/news/`
-3. Follow the TODO comments in `processor.py` → `_handle_news()`
-
-### Weather API
-
-1. Get a free API key at [OpenWeatherMap](https://openweathermap.org/api)
-2. Set `OPENWEATHERMAP_API_KEY=your_key` in `.env`
+`/api/query` and `/api/dev_process` stream **NDJSON** (`application/x-ndjson`) so the UI can show incremental status updates.
 
 ---
 
-## Dev Mode
+## Models & Datasets
 
-Toggle "Dev Mode" in the top navbar to test without ASR/TTS:
+### Try the Nepali ASR model (online demo)
 
-- Audio input is replaced by a text field
-- Enter queries directly (English or Nepali)
-- TTS output is skipped; only text responses are shown
-- Useful for testing intent detection, weather API, etc.
+- Hugging Face Space: https://huggingface.co/spaces/gam30/nepali-asr-indicconformer
 
-**Keyboard shortcut**: `Ctrl+Enter` to submit in dev mode.
+### Download Nepali ASR model
 
-See [DEV_MODE_GUIDE.md](DEV_MODE_GUIDE.md) for more details.
+- Model: https://huggingface.co/gam30/nepali-automatic-speech-recognition
+
+### Datasets
+
+- Test set (noisy): https://huggingface.co/datasets/gam30/nepali-asr-test-set-all-noisy
+- Train/validation: https://huggingface.co/datasets/gam30/Nepali-asr-train-val
+
+### Pipeline model links (Drive)
+
+The pipeline folder also includes Drive links referenced by notebooks:
+
+- LLM model: https://drive.google.com/file/d/1pJ947KCOmeM-zjFG5jTKUPan0QaNXz0R/view?usp=sharing
+- ASR model: https://drive.google.com/file/d/10tIs7Xnq2QdGFQ82ZjXryFw8ttR3p6b9/view?usp=sharing
 
 ---
 
-## Adding New Features
+## Notebooks
 
-### New Language
+- [notebook_files/nepali-asr-api-server-kaggle.ipynb](notebook_files/nepali-asr-api-server-kaggle.ipynb)
+	- Runs a Nepali ASR FastAPI server on Kaggle GPU and exposes `/transcribe` via ngrok.
+- [notebook_files/RAG_SLM_ASR_API_Server_v1.ipynb](notebook_files/RAG_SLM_ASR_API_Server_v1.ipynb)
+	- Runs a unified server for `/ask` and `/ask_audio` (English ASR + RAG + SLM) on Colab GPU and exposes it via ngrok.
+- [notebook_files/instruction_finetune_llm_sample.ipynb](notebook_files/instruction_finetune_llm_sample.ipynb)
+	- Sample notebook for instruction-finetuning concepts (model training example / reference).
 
-1. Add ASR model integration in `asr_service.py`
-2. Add translation pairs in `translator.py`
-3. Update language dropdown in `frontend/index.html`
-4. Update `LANG_DETECT_MODEL` configuration if needed
+For deeper RAG/SLM internals, see:
 
-### New Intent Handler
-
-1. Add keywords to `processor.py` (e.g., `SPORTS_KEYWORDS`)
-2. Create handler method `_handle_sports()`
-3. Add routing logic in `_detect_intent()` and `process_query()`
-
-### New TTS Voice
-
-1. Add reference WAV to `models/tts/`
-2. Update `TTS_REFERENCE_WAV` in `.env`
-3. Or add multiple voice options with a selection dropdown
+- RAG docs: [ASR-LLM-Pipeline/RAG/README.md](ASR-LLM-Pipeline/RAG/README.md)
+- SLM docs: [ASR-LLM-Pipeline/SLM/README.md](ASR-LLM-Pipeline/SLM/README.md)
 
 ---
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| `ModuleNotFoundError: pydantic_settings` | `pip install pydantic-settings` |
-| Audio conversion fails | Install FFmpeg: `sudo apt install ffmpeg` |
-| CUDA out of memory | Set `DEVICE=cpu` in `.env` or reduce model batch size |
-| Frontend not loading | Ensure server is running on port 8000, check `/frontend/` exists |
-| Weather API mock data | Set `OPENWEATHERMAP_API_KEY` in `.env` |
-| Recording not working | Allow microphone access in browser, use HTTPS or localhost |
+### “Cannot reach Colab server” / ASR fails
+
+- Re-run the notebook and copy the new ngrok URL.
+- Update `ASR_COLAB_API_URL` / `RAG_COLAB_API_URL` in `backend/.env`.
+- Check health endpoints:
+	- `<ASR_COLAB_API_URL>/health`
+	- `<RAG_COLAB_API_URL>/health`
+
+### Audio conversion issues
+
+- Install ffmpeg (`sudo apt install -y ffmpeg`).
+- If conversion fails, the backend will try to proceed with the original file.
+
+### Translation or TTS not working
+
+- `deep-translator` and `gTTS` rely on external services; ensure you have internet access.
+
+### Running uvicorn from repo root fails with `ModuleNotFoundError: No module named 'app'`
+
+- Run with `--app-dir backend` or run uvicorn from inside the `backend/` directory.
 
 ---
 
-## Future Roadmap
+## Notes
 
-- [ ] WebSocket streaming for real-time ASR
-- [ ] Multi-turn conversation support
-- [ ] User authentication
-- [ ] Docker deployment
-- [ ] Streaming TTS response
-- [ ] Custom wake word detection
-- [ ] Mobile-responsive PWA
-- [ ] Batch processing mode
+- This project is currently configured for development convenience (CORS allows all origins; no auth).
+- If you plan to deploy publicly, restrict CORS origins and add authentication.
 
----
-
-## License
-
-MIT License — See LICENSE file for details.

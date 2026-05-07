@@ -16,6 +16,7 @@
 # ==============================================================================
 
 import logging
+import os
 import re
 import time as time_module
 from datetime import datetime
@@ -277,7 +278,8 @@ class ProcessorService:
                     logger.info(f"RAG returned no answer: {message}")
                     return message, []
 
-                answer = self._normalize_answer_text(data["answer"])
+                answer_text = data.get("answer") or data.get("rag_answer") or ""
+                answer = self._normalize_answer_text(answer_text)
                 sources = data.get("sources", [])
 
                 logger.info(
@@ -312,11 +314,97 @@ class ProcessorService:
             logger.error(f"Unexpected RAG error: {e}")
             return f"Q&A Error: {str(e)}", []
 
+    async def ask_audio_with_rag(
+        self,
+        audio_path: str,
+        min_cosine: Optional[float] = None,
+        days_filter: Optional[int] = None,
+        top_k: Optional[int] = None,
+    ) -> dict:
+        """
+        Send English audio to Colab /ask_audio endpoint and return unified output.
+
+        Expected response from Colab server:
+          {
+            "transcription": str,
+            "question": str,
+            "answer"|"rag_answer": str,
+            "sources": list,
+            ...optional metadata
+          }
+        """
+        if not self._rag_api_url:
+            raise RuntimeError("RAG_COLAB_API_URL is not configured.")
+
+        if not os.path.isfile(audio_path):
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        ask_audio_url = f"{self._rag_api_url.rstrip('/')}/ask_audio"
+
+        # Keep server defaults when fields are omitted by sending -1.
+        form_data = {
+            "min_cosine": str(self._rag_min_cosine if min_cosine is None else min_cosine),
+            "days_filter": str(self._rag_days_filter if days_filter is None else days_filter),
+            "top_k": str(self._rag_top_k if top_k is None else top_k),
+        }
+
+        try:
+            with open(audio_path, "rb") as f:
+                files = {
+                    "audio": (os.path.basename(audio_path), f, "audio/wav"),
+                }
+                response = requests.post(
+                    ask_audio_url,
+                    files=files,
+                    data=form_data,
+                    timeout=180,
+                )
+
+            if response.status_code != 200:
+                try:
+                    detail = response.json().get("detail", response.text)
+                except Exception:
+                    detail = response.text
+                raise RuntimeError(f"Colab ask_audio error {response.status_code}: {detail}")
+
+            data = response.json()
+
+            transcription = data.get("transcription", "")
+            if isinstance(transcription, list):
+                transcription = " ".join(str(i) for i in transcription)
+            elif isinstance(transcription, str):
+                transcription = transcription.strip()
+                if transcription.startswith("['") and transcription.endswith("']"):
+                    transcription = transcription[2:-2]
+                elif transcription.startswith('["') and transcription.endswith('"]'):
+                    transcription = transcription[2:-2]
+                transcription = transcription.strip()
+            question = (data.get("question") or transcription).strip()
+            answer_raw = data.get("answer") or data.get("rag_answer") or ""
+            answer = self._normalize_answer_text(answer_raw)
+            sources = data.get("sources", [])
+
+            return {
+                "transcription": transcription,
+                "question": question,
+                "answer": answer,
+                "sources": sources,
+                "fallback": data.get("fallback", False),
+                "message": data.get("message"),
+                "params_used": data.get("params_used"),
+            }
+        except requests.exceptions.Timeout as e:
+            raise RuntimeError("Colab ask_audio request timed out.") from e
+        except requests.exceptions.ConnectionError as e:
+            raise RuntimeError(
+                "Cannot reach RAG+ASR Colab server. Ensure notebook/ngrok is running."
+            ) from e
+
     def _normalize_answer_text(self, text: str) -> str:
         """Clean model output labels like 'Response:' from the start."""
         if not text:
             return ""
-        return re.sub(r"^\s*response\s*:\s*", "", text, flags=re.IGNORECASE).strip()
+        return re.sub(r"^[\s?]*response\s*:\s*", "", text, flags=re.IGNORECASE).strip()
 
     # ──────────────────────────────────────────────────────────────────────
     # Utility Methods

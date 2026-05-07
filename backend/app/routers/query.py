@@ -19,6 +19,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.schemas import (
@@ -45,6 +46,13 @@ from app.services.utils import (
 logger = logging.getLogger("voice_assistant.router")
 
 router = APIRouter(prefix="/api", tags=["Voice Assistant API"])
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., description="Question text")
+    min_cosine: Optional[float] = Field(default=-1)
+    days_filter: Optional[int] = Field(default=-1)
+    top_k: Optional[int] = Field(default=-1)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -77,13 +85,93 @@ async def health_check(settings: Settings = Depends(get_settings)):
         version=settings.APP_VERSION,
         device=settings.DEVICE,
         models_loaded={
-            "asr_english": "placeholder (not integrated)",
+            "asr_english": f"remote via Colab /ask_audio ({settings.RAG_COLAB_API_URL})",
             "asr_nepali": f"remote ({settings.ASR_COLAB_API_URL})",
             "translator": "deep-translator",
             "tts": "gTTS + pydub",
             "rag": f"remote ({settings.RAG_COLAB_API_URL})",
         },
     )
+
+
+@router.post("/ask")
+async def ask_text(
+    body: AskRequest,
+    processor: ProcessorService = Depends(get_processor_service),
+):
+    """
+    Colab-compatible text endpoint.
+    Returns: transcription=None, question, answer, sources.
+    """
+    question = (body.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question must not be empty")
+
+    try:
+        answer, sources = await processor._handle_rag_query(question)
+        return {
+            "transcription": None,
+            "question": question,
+            "answer": answer,
+            "sources": sources,
+        }
+    except Exception as e:
+        logger.error(f"/ask error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ask_audio")
+async def ask_audio(
+    audio: UploadFile = File(...),
+    settings: Settings = Depends(get_settings),
+    processor: ProcessorService = Depends(get_processor_service),
+):
+    """
+    Colab-compatible English audio endpoint.
+    Returns transcription + question + answer + sources.
+    """
+    temp_path = None
+    wav_path = None
+    try:
+        content = await audio.read()
+        await audio.seek(0)
+        is_valid, error_msg = validate_audio_file(
+            audio.filename,
+            len(content),
+            settings.ALLOWED_AUDIO_EXTENSIONS,
+            settings.MAX_UPLOAD_SIZE,
+        )
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+        temp_path = await save_upload_to_temp(audio, settings.TEMP_DIR)
+        try:
+            wav_path = convert_to_wav_16k(temp_path, settings.TEMP_DIR)
+        except Exception:
+            wav_path = temp_path
+
+        data = await processor.ask_audio_with_rag(wav_path)
+        return {
+            "transcription": data.get("transcription", ""),
+            "question": data.get("question", ""),
+            "answer": data.get("answer", ""),
+            "sources": data.get("sources", []),
+            "fallback": data.get("fallback", False),
+            "message": data.get("message"),
+            "params_used": data.get("params_used"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/ask_audio error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        for path in [temp_path, wav_path]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
 
 @router.post("/query")
@@ -179,6 +267,52 @@ async def process_query(
                     }) + "\n"
                 except Exception as e:
                     logger.warning(f"Could not encode input audio: {e}")
+
+                # For English audio, use Colab's unified /ask_audio path:
+                # English ASR -> RAG + LLM in one call.
+                if lang == "en":
+                    yield json.dumps({"type": "step", "message": "Calling Colab English ASR + RAG pipeline..."}) + "\n"
+                    colab_result = await processor.ask_audio_with_rag(wav_path)
+                    transcript = colab_result.get("transcription", "")
+                    detected_lang = "en"
+                    answer_english = colab_result.get("answer", "")
+                    rag_sources = colab_result.get("sources", [])
+                    yield json.dumps({"type": "step", "message": "Colab ASR + RAG processing complete."}) + "\n"
+                    yield json.dumps({
+                        "type": "asr",
+                        "transcript": transcript,
+                        "detected_lang": detected_lang
+                    }) + "\n"
+
+                    yield json.dumps({
+                        "type": "process",
+                        "answer_english": answer_english,
+                        "rag_sources": rag_sources
+                    }) + "\n"
+
+                    final_text = answer_english
+                    yield json.dumps({
+                        "type": "final_text",
+                        "final_text": final_text,
+                        "final_lang": "en"
+                    }) + "\n"
+
+                    for path in [temp_path, wav_path]:
+                        if os.path.exists(path):
+                            try:
+                                os.remove(path)
+                            except OSError:
+                                pass
+
+                    yield json.dumps({"type": "step", "message": f"Generating speech audio (Online TTS: {use_online_tts})..."}) + "\n"
+                    audio_base64 = await tts_service.synthesize(final_text, "en", use_online=use_online_tts)
+                    yield json.dumps({
+                        "type": "audio",
+                        "audio_base64": audio_base64
+                    }) + "\n"
+                    yield json.dumps({"type": "step", "message": "Speech synthesis complete."}) + "\n"
+                    yield json.dumps({"type": "done"}) + "\n"
+                    return
 
                 yield json.dumps({"type": "step", "message": "Transcribing audio..."}) + "\n"
                 asr_result = await asr_service.transcribe(wav_path, lang)
